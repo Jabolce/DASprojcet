@@ -1,0 +1,10 @@
+cd C:\kafka_2.13-3.9.0
+# Start Zookeeper
+bin\windows\zookeeper-server-start.bat config\zookeeper.properties
+
+cd C:\kafka_2.13-3.9.0
+# Start Kafka Broker
+bin\windows\kafka-server-start.bat config\server.properties
+
+cd C:\kafka_2.13-3.9.0
+bin\windows\kafka-topics.bat --create --topic my-topic3 --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
