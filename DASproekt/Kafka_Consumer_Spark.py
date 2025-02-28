@@ -2,7 +2,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, avg, window, from_json
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
 
-# Иницијализирај Spark Streaming Session
 spark = (SparkSession.builder
     .appName("StockDataConsumer")
     .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints")
@@ -11,7 +10,6 @@ spark = (SparkSession.builder
             "org.apache.spark:spark-avro_2.12:3.5.4")
     .getOrCreate())
 
-# Дефинирај schema за податоците што доаѓаат од Kafka
 schema = StructType([
     StructField("Date", StringType(), True),
     StructField("Open", DoubleType(), True),
@@ -23,21 +21,18 @@ schema = StructType([
 ])
 
 
-# Читање на податоци од Kafka
 df = (spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
       .option("subscribe", "stock-data")
-      .option("startingOffsets", "earliest")  # или "latest" ако сакаш нови податоци
+      .option("startingOffsets", "earliest") 
       .load())
 
-# Дебаг тест: Проверка дали податоците пристигнуваат правилно
 df_test = df.selectExpr("CAST(value AS STRING) as json_str") \
     .select(from_json(col("json_str"), schema).alias("data")) \
-    .select("data.*")  # Ги вади сите полиња
+    .select("data.*")  
 
 
-# Претворање на вредностите од Kafka во DataFrame со дефинирана структура
 stock_df = (df.selectExpr("CAST(value AS STRING)")
             .select(from_json(col("value"), schema).alias("data"))
             .select(
@@ -50,16 +45,14 @@ stock_df = (df.selectExpr("CAST(value AS STRING)")
                 col("data.Ticker").alias("Ticker")
             ))
 
-# Агрегација: Движечки просек на "Close" во 5-минутен прозорец
 moving_avg = (stock_df.withWatermark("Datetime", "5 minutes")
               .groupBy(window("Datetime", "5 minutes"), col("Ticker"))
               .agg(avg("Close").alias("Avg_Close")))
 
-# Прикажи резултати на конзола
 query = (df_test.writeStream
               .outputMode("append")
               .format("console")
-              .option("truncate", False)  # Ова спречува кратење на податоците
+              .option("truncate", False)
               .start())
 
 query.awaitTermination()
