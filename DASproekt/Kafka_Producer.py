@@ -1,4 +1,4 @@
-from kafka import KafkaProducer
+from confluent_kafka import Producer
 import json
 import time
 import pandas as pd
@@ -7,10 +7,19 @@ import os
 KAFKA_BROKER = "localhost:9092"
 TOPIC_NAME = "stock-data"
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BROKER,
-    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-)
+producer_config = {
+    'bootstrap.servers': KAFKA_BROKER,
+}
+
+producer = Producer(producer_config)
+
+
+def delivery_report(err, msg):
+    if err is not None:
+        print(f'Message delivery failed: {err}')
+    else:
+        print(f'Message delivered to {msg.topic()} [{msg.partition()}]')
+
 
 def send_stock_data():
     data_folder = "stock_data"
@@ -25,9 +34,22 @@ def send_stock_data():
             for _, row in stock_df.iterrows():
                 stock_data = row.to_dict()
                 stock_data["Ticker"] = ticker
-                producer.send(TOPIC_NAME, stock_data)
+
+                # Convert data to JSON string
+                msg = json.dumps(stock_data)
+
+                # Produce the message
+                producer.produce(TOPIC_NAME, msg.encode('utf-8'), callback=delivery_report)
+
+                # Wait for any outstanding messages to be delivered
+                producer.poll(0)
+
                 print(f"Sent: {stock_data}")
                 time.sleep(1)
+
+    # Wait for all messages to be delivered
+    producer.flush()
+
 
 if __name__ == "__main__":
     send_stock_data()
