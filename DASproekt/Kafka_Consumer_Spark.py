@@ -1,32 +1,28 @@
 import logging
 import uuid
+import psycopg2
+import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, avg, window, from_json, struct, current_timestamp
+from pyspark.sql.functions import col, avg, min, max, sum, window, from_json
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
 
 logger = logging.getLogger(__name__)
 
-unique_group_id = f"stock-data-consumer-{uuid.uuid4()}"
-
-try:
-    spark = (SparkSession.builder
-             .appName("StockDataConsumer")
-             .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints")
-             .config("spark.jars.packages",
-                     "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
-                     "org.apache.spark:spark-avro_2.12:3.5.4,"
-                     "com.datastax.spark:spark-cassandra-connector_2.12:3.0.0")
-             .config("spark.cassandra.connection.host", "127.0.0.1")
-             .config("spark.cassandra.connection.port", "9042")
-             .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true")
-             .config("spark.sql.streaming.stopTimeout", "60000")
-             .getOrCreate())
-except Exception as e:
-    logger.error(f"Failed to create Spark Session: {e}", exc_info=True)
-    raise
+# 🚀 Initialize Spark Session
+spark = (SparkSession.builder
+         .appName("StockDataConsumer")
+         .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints")
+         .config("spark.jars.packages",
+                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
+                 "org.postgresql:postgresql:42.5.1")  # PostgreSQL Driver
+         .config("spark.sql.shuffle.partitions", "16")  # Optimize for parallelism
+         .config("spark.driver.memory", "16g")
+         .config("spark.executor.memory", "8g")
+         .getOrCreate())
 
 spark.sparkContext.setLogLevel("WARN")
 
+# 🏗️ Define Schema
 schema = StructType([
     StructField("Date", TimestampType(), True),
     StructField("Open", DoubleType(), True),
@@ -37,66 +33,86 @@ schema = StructType([
     StructField("Ticker", StringType(), True)
 ])
 
-try:
-    df = (spark.readStream
-          .format("kafka")
-          .option("kafka.bootstrap.servers", "localhost:9092")
-          .option("subscribe", "stock-data")
-          .option("startingOffsets", "earliest")
-          .option("failOnDataLoss", "false")
-          .option("kafka.group.id", unique_group_id)
-          .option("kafka.session.timeout.ms", "10000")
-          .option("kafka.heartbeat.interval.ms", "3000")
-          .load())
-except Exception as e:
-    logger.error(f"Failed to create Kafka stream: {e}", exc_info=True)
-    raise
+# 🔄 Kafka Stream Configuration
+df = (spark.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "stock-data")
+      .option("startingOffsets", "latest")
+      .option("failOnDataLoss", "false")
+      .option("kafka.fetch.min.bytes", "50000")  # Ensure frequent fetches
+      .option("kafka.max.partition.fetch.bytes", "10485760")  # Reduce to 10MB
+      .option("maxOffsetsPerTrigger", "5000000")  # Increase batch size for more data
+      .option("spark.streaming.kafka.maxRatePerPartition", "2000000")  # Process more messages per partition
+      .option("spark.sql.shuffle.partitions", "16")
+      .load())
 
-stock_df = (df.selectExpr("CAST(value AS STRING)")
-            .select(from_json(col("value"), schema).alias("data"))
-            .select("data.*"))
+stock_df = df.selectExpr("CAST(value AS STRING)").select(from_json(col("value"), schema).alias("data")).select("data.*")
 
-def log_batch(df, epoch_id):
+# 📊 Aggregate Stock Data
+aggregated_data = (stock_df.withWatermark("Date", "10 minutes")
+                    .groupBy(window("Date", "5 minutes"), col("Ticker").alias("ticker"))
+                    .agg(
+                        min("Open").alias("min_open"),
+                        max("High").alias("max_high"),
+                        min("Low").alias("min_low"),
+                        avg("Close").alias("avg_close"),
+                        sum("Volume").alias("total_volume")
+                    ))
+
+# 🎯 PostgreSQL Configuration
+PG_HOST = "localhost"
+PG_PORT = "5432"
+PG_DATABASE = "stock_data"
+PG_USER = "postgres"
+PG_PASSWORD = "Cheddar92$"
+PG_TABLE = "stock_aggregated_data"
+
+# 🚀 Write to PostgreSQL
+def write_to_postgres(batch_df, batch_id):
     try:
-        logger.info(f"Processing Batch {epoch_id}")
-        df.show(5, truncate=False)
-        logger.info(f"Batch size: {df.count()} records")
+        if batch_df.isEmpty():
+            print(f"⚠️ [BATCH {batch_id}] No data received. Skipping insert.")
+            return
+
+        conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            dbname=PG_DATABASE,
+            user=PG_USER,
+            password=PG_PASSWORD
+        )
+        cursor = conn.cursor()
+
+        batch_data = [(row['window']['start'], row['window']['end'], row['ticker'],
+                       row['min_open'], row['max_high'], row['min_low'], row['avg_close'], row['total_volume'])
+                      for row in batch_df.collect()]
+
+        if batch_data:
+            insert_query = f"""
+                INSERT INTO {PG_TABLE} (window_start, window_end, ticker, min_open, max_high, min_low, avg_close, total_volume)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (window_start, ticker) DO UPDATE
+                SET min_open = EXCLUDED.min_open,
+                    max_high = EXCLUDED.max_high,
+                    min_low = EXCLUDED.min_low,
+                    avg_close = EXCLUDED.avg_close,
+                    total_volume = EXCLUDED.total_volume;
+            """
+            cursor.executemany(insert_query, batch_data)
+            conn.commit()
+            print(f"✅ [BATCH {batch_id}] Inserted {len(batch_data)} records into PostgreSQL")
+
+        cursor.close()
+        conn.close()
     except Exception as e:
-        logger.error(f"Error in log_batch: {e}", exc_info=True)
+        print(f"❌ [BATCH {batch_id}] Database Error: {e}")
 
-moving_avg = (stock_df.withWatermark("Date", "5 minutes")
-              .groupBy(window("Date", "5 minutes"), col("Ticker"))
-              .agg(avg("Close").alias("avg_close")))
+# 🚀 Start Streaming Query
+query = (aggregated_data.writeStream
+         .foreachBatch(write_to_postgres)
+         .outputMode("append")
+         .trigger(processingTime="30 seconds")  # Ensures continuous processing
+         .start())
 
-cassandra_df = moving_avg.select(
-    col("window.start").alias("window_start"),
-    col("window.end").alias("window_end"),
-    col("Ticker").alias("ticker"),
-    col("avg_close")
-)
-
-
-try:
-    query = (cassandra_df.writeStream
-             .foreachBatch(log_batch)
-             .outputMode("append")
-             .format("org.apache.spark.sql.cassandra")
-             .option("keyspace", "stock_analysis")
-             .option("table", "stock_moving_averages")
-             .option("checkpointLocation", "/tmp/cassandra-checkpoints")
-             .start())
-
-    if query.awaitTermination(timeout=7200):
-        logger.info("Streaming query completed successfully")
-    else:
-        logger.warning("Streaming query timed out")
-
-    if query.exception():
-        logger.error(f"Streaming query failed: {query.exception()}")
-
-except Exception as e:
-    logger.error(f"Error in streaming process: {e}", exc_info=True)
-finally:
-    if 'query' in locals() and query.isActive:
-        query.stop()
-        logger.info("Streaming query stopped")
+query.awaitTermination()
