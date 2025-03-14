@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>US Stock Data App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; }
+        .card { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <h1>US Stock Data App</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Data Status</div>
+                <div class="card-body">
+                    {% if has_data %}
+                        <p>Total stocks: {{ stats.total_stocks }}</p>
+                        <p>Last updated: {{ stats.last_updated }}</p>
+                        <p>Data age: {{ stats.data_age_hours }} hours</p>
+                        <a href="/view-data" class="btn btn-primary">View Data</a>
+                    {% else %}
+                        <p>No data available. Run the scraper to fetch stock data.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Run Scraper</div>
+                <div class="card-body">
+                    <form id="scraper-form">
+                        <div class="mb-3">
+                            <label for="period" class="form-label">Time Period</label>
+                            <select class="form-select" id="period" name="period">
+                                <option value="1d">1 Day</option>
+                                <option value="5d">5 Days</option>
+                                <option value="1mo" selected>1 Month</option>
+                                <option value="3mo">3 Months</option>
+                                <option value="6mo">6 Months</option>
+                                <option value="1y">1 Year</option>
+                                <option value="10y">10 Years</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-success" id="run-scraper">Run Scraper</button>
+                    </form>
+                    <div id="scraper-status" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('scraper-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const period = document.getElementById('period').value;
+        const statusDiv = document.getElementById('scraper-status');
+
+        statusDiv.innerHTML = '<div class="alert alert-info">Running scraper, please wait...</div>';
+
+        fetch(`/run-scraper?period=${period}`)
+            .then(response => response.json())
+            .then(data => {
+                statusDiv.innerHTML = `<div class="alert alert-success">Processed ${data.tickers_processed} tickers</div>`;
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            })
+            .catch(error => {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error}</div>`;
+            });
+    });
+    </script>
+</body>
+</html>
+    
