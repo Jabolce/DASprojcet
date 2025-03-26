@@ -7,7 +7,7 @@ cd C:\kafka_2.13-3.9.0
 bin\windows\kafka-server-start.bat config\server.properties
 
 cd C:\kafka_2.13-3.9.0
-bin\windows\kafka-topics.bat --create --topic my-topic3 --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+bin\windows\kafka-topics.bat --create --topic stock-data --bootstrap-server localhost:9092 --partitions 4 --replication-factor 1
 
 #sparkUI
 http://localhost:4040/jobs/

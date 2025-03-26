@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Stock Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Montserrat', sans-serif;
+      background-color: #f2f5f9;
+      color: #333;
+    }
+
+    .wrapper {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 40px;
+      background-color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 28px;
+      color: #2c3e50;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      padding: 20px 40px;
+      background-color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    select, input, button {
+      padding: 10px 14px;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      transition: all 0.2s ease;
+    }
+
+    select:focus, input:focus, button:focus {
+      border-color: #4a90e2;
+      outline: none;
+    }
+
+    button {
+      background-color: #4a90e2;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #357ABD;
+    }
+
+    #currentSymbolDisplay {
+      font-weight: 600;
+      font-size: 16px;
+      margin-left: 40px;
+      margin-top: 10px;
+      color: #34495e;
+    }
+
+    .graph-container {
+      flex: 1;
+      padding: 30px 40px;
+    }
+
+    #mainGraph {
+      width: 100%;
+      height: 600px;
+    }
+
+    #liveStatus {
+      font-weight: bold;
+      font-size: 16px;
+      color: orange;
+      margin-top: 10px;
+      text-align: left;
+      margin-left: 40px;
+    }
+
+    @media (max-width: 768px) {
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      #currentSymbolDisplay, #liveStatus {
+        margin-left: 20px;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <header>
+      <h1>📈 Stock Data Dashboard</h1>
+    </header>
+
+    <div class="controls">
+      <select id="symbolSelector">
+        <option value="">All Symbols</option>
+      </select>
+
+      <input type="text" id="customSymbol" placeholder="Enter custom symbol" />
+      <button onclick="fetchHistoricalData(true)">View</button>
+
+      <select id="timeRange">
+        <option value="1d">1 Day</option>
+        <option value="5d">5 Days</option>
+        <option value="1mo">1 Month</option>
+        <option value="6mo">6 Months</option>
+        <option value="1y">1 Year</option>
+        <option value="5y">5 Years</option>
+        <option value="10y">10 Years</option>
+      </select>
+    </div>
+
+    <div id="currentSymbolDisplay">Currently Viewing: None</div>
+
+    <div class="graph-container">
+      <div id="mainGraph"></div>
+      <div id="liveStatus">Loading data...</div>
+    </div>
+  </div>
+    <script>
+        let currentSymbol = null;
+        let usingCustomInput = false;
+        let liveDataReceived = false;
+        let liveDataTraces = {};
+        let lastPrices = {};
+
+    async function loadStockSymbols() {
+        let response = await fetch('/get-stock-symbols');
+        let symbols = await response.json();
+        let selector = document.getElementById("symbolSelector");
+        symbols.forEach(symbol => {
+            let option = document.createElement("option");
+            option.value = symbol;
+            option.textContent = symbol;
+            selector.appendChild(option);
+        });
+
+        if (symbols.length > 0) {
+            selector.value = symbols[0];
+            fetchHistoricalData();
+        }
+    }
+
+    async function fetchHistoricalData(useInput = false) {
+    if (useInput) usingCustomInput = true;
+    let symbol = usingCustomInput
+        ? document.getElementById("customSymbol").value.toUpperCase()
+        : document.getElementById("symbolSelector").value;
+
+    currentSymbol = symbol;
+    document.getElementById("currentSymbolDisplay").textContent = `Currently Viewing: ${symbol}`;
+    let range = document.getElementById("timeRange").value;
+
+    let url = `/historical-data?range=${range}`;
+    if (symbol) url += `&symbol=${symbol}`;
+    let response = await fetch(url);
+    let data = await response.json();
+
+    // Build historical trace
+    const historicalTrace = {
+        x: data.map(d => d.window_start),
+        y: data.map(d => d.close_price),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Historical Data',
+        line: { color: 'blue' }
+    };
+
+    let traces = [historicalTrace];
+
+    // Pre-fill live trace with last historical price
+    if (data.length > 0) {
+        let lastData = data[data.length - 1];
+        lastPrices[symbol] = lastData;
+
+        liveDataTraces[symbol] = {
+            x: [lastData.window_start],
+            y: [lastData.close_price]
+        };
+
+        const liveTrace = {
+            x: [lastData.window_start],
+            y: [lastData.close_price],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Live Data',
+            line: { color: 'orange'}
+        };
+        liveDataTraces[symbol].traceIndex = traces.length;
+        traces.push(liveTrace);
+    }
+
+    // Add forecast
+try {
+    const forecastResponse = await fetch(`/forecast-data?symbol=${symbol}`);
+    const forecast = await forecastResponse.json();
+
+    if (!forecast.error && forecast.length > 0) {
+        // Don't show forecast for 1 day
+        if (range !== "1d") {
+            let rangeLimit = null;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // normalize to start of day
+
+            let forecastFiltered = forecast;
+
+            if (rangeLimit !== null) {
+                forecastFiltered = forecast.filter(entry => {
+                    const entryDate = new Date(entry.ds);
+                    entryDate.setHours(0, 0, 0, 0); // normalize too
+                    const diffInDays = (entryDate - today) / (1000 * 60 * 60 * 24);
+                    return diffInDays >= 0 && diffInDays <= rangeLimit;
+                });
+            }
+
+            const forecastTrace = {
+                x: forecastFiltered.map(d => d.ds),
+                y: forecastFiltered.map(d => d.yhat),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Forecast',
+                line: { color: 'green' }
+            };
+            traces.push(forecastTrace);
+        }
+    }
+} catch (err) {
+    console.error("Error loading forecast:", err);
+}
+
+
+    Plotly.newPlot('mainGraph', traces, {
+        xaxis: { title: 'Time', tickformat: '%Y-%m-%d %H:%M:%S' },
+        yaxis: { title: 'Close Price' }
+    });
+
+    fetchLiveData(symbol);
+}
+    function updateLiveGraph(symbol) {
+    const liveTrace = liveDataTraces[symbol];
+    if (!liveTrace) return;
+        liveTrace.x.shift();
+        liveTrace.y.shift();
+    liveTrace.x.push(lastPrices[symbol].window_start);
+    liveTrace.y.push(lastPrices[symbol].close_price);
+
+    Plotly.extendTraces('mainGraph', {
+        x: [liveTrace.x],
+        y: [liveTrace.y]
+    }, [liveTrace.traceIndex]);
+}
+async function fetchLiveData(symbol) {
+    if (!symbol) return;
+    if (window.liveDataStream) window.liveDataStream.close();
+
+    const now = new Date();
+    const skopjeHour = now.getUTCHours() + 1; // Adjust for DST if needed
+    const minutes = skopjeHour * 60 + now.getUTCMinutes();
+    const marketOpen = 14 * 60 + 30;
+    const marketClose = 21 * 60;
+
+    if (minutes >= marketOpen && minutes <= marketClose) {
+        // Market Open – Stream live
+        let eventSource = new EventSource(`/live-data?symbol=${symbol}`);
+        eventSource.onmessage = function(event) {
+            let data = JSON.parse(event.data);
+            console.log("💡 SSE received:", data);
+            let ticker = data.ticker.toUpperCase();
+            lastPrices[ticker] = data;
+
+            if (ticker !== symbol.toUpperCase()) return;
+
+            if (!liveDataTraces[symbol]) {
+                // Initialize trace if not present
+                liveDataTraces[symbol] = {
+                    x: [data.window_start],
+                    y: [data.close_price]
+                };
+
+                Plotly.addTraces('mainGraph', [{
+                    x: [data.window_start],
+                    y: [data.close_price],
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Live Data',
+                    line: { color: 'orange' }
+                }]).then(gd => {
+                    liveDataTraces[symbol].traceIndex = gd.data.length - 1;
+                    updateLiveGraph(symbol);
+                });
+
+            } else {
+                // Append new point
+                updateLiveGraph(symbol);
+            }
+
+            if (!liveDataReceived) {
+                document.getElementById("liveStatus").textContent = "LIVE";
+                document.getElementById("liveStatus").style.color = "green";
+                liveDataReceived = true;
+            }
+        };
+
+        eventSource.onerror = function(event) {
+            console.error("Live data stream error:", event);
+            eventSource.close();
+        };
+
+        window.liveDataStream = eventSource;
+        document.getElementById("liveStatus").textContent = "Loading data...";
+        document.getElementById("liveStatus").style.color = "orange";
+        liveDataReceived = false;
+
+    } else {
+        // Market Closed – Static fallback
+        let range = document.getElementById("timeRange").value;
+        let histResponse = await fetch(`/historical-data?symbol=${currentSymbol}&range=${range}`);
+        let histData = await histResponse.json();
+        let traceHistorical = {
+            x: histData.map(d => d.window_start),
+            y: histData.map(d => d.close_price),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Historical Data'
+        };
+        let lastResponse = await fetch(`/last-price?symbol=${symbol}`);
+        let lastData = await lastResponse.json();
+        let traceLastPrice = {
+            x: [lastData.window_start],
+            y: [lastData.close_price],
+            type: 'scatter',
+            mode: 'markers',
+            name: 'Last Price',
+            marker: { color: 'red', size: 10, symbol: 'circle' }
+        };
+
+        let traces = [traceHistorical, traceLastPrice];
+
+        if (range !== "1d") {
+            let forecastResponse = await fetch(`/forecast-data?symbol=${symbol}`);
+            let forecastData = await forecastResponse.json();
+
+            if (!forecastData.error && forecastData.length > 0) {
+                let traceForecast = {
+                    x: forecastData.map(d => d.ds),
+                    y: forecastData.map(d => d.yhat),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Forecast',
+                    line: { color: 'green' }
+                };
+                traces.push(traceForecast);
+            }
+        }
+
+        Plotly.newPlot('mainGraph', traces, {
+            xaxis: { title: 'Time', tickformat: '%Y-%m-%d %H:%M:%S' },
+            yaxis: { title: 'Close Price' }
+        });
+
+        document.getElementById("liveStatus").textContent = "Market Closed";
+        document.getElementById("liveStatus").style.color = "red";
+    }
+}
+
+
+    document.getElementById("symbolSelector").addEventListener("change", function() {
+        usingCustomInput = false;
+        fetchHistoricalData();
+    });
+
+    document.getElementById("customSymbol").addEventListener("change", function() {
+        fetchHistoricalData(true);
+    });
+
+    document.getElementById("timeRange").addEventListener("change", function() {
+        fetchHistoricalData();
+    });
+
+    loadStockSymbols();
+    </script>
+</body>
+</html>
