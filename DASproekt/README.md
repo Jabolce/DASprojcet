@@ -4,6 +4,7 @@
 
 
 Структура на Проектот
+```
 .
 ├── Data_Ingestion_Service.py          # Прибирање на историски податоци преку yFinance
 ├── Data_Analysis_Service.py           # Генерирање прогнози со Prophet
@@ -15,7 +16,7 @@
 ├── Dockerfile                         # Docker image за апликацијата
 ├── templates/
 │   └── graph.html                     # Ист HTML – копиран тука за Flask
-
+```
 
 Опис на Сервисите
 
