@@ -15,7 +15,7 @@
 ├── docker-compose.yml                 # Docker Compose конфигурација
 ├── Dockerfile                         # Docker image за апликацијата
 ├── templates/
-│   └── graph.html                     # Ист HTML – копиран тука за Flask
+│   └── graph.html                     # HTML код за изглед на страницата и прикажување на графови
 ```
 
 Опис на Сервисите
