@@ -1,0 +1,84 @@
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: stock-postgres
+    environment:
+      POSTGRES_DB: stock_data
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Cheddar92$
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: kafka-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  dashboard:
+    build:
+      context: .
+    container_name: stock-dashboard
+    command: python3 Dashboard.py
+    depends_on:
+      - postgres
+    ports:
+      - "8050:5000"  # hostPort:containerPort
+    volumes:
+      - ./ticker_list.csv:/app/ticker_list.csv
+      - ./templates:/app/templates
+
+  realtime:
+    build:
+      context: .
+    container_name: stock-realtime
+    command: python3 Real-Time_Processing_Service.py
+    depends_on:
+      - kafka
+      - zookeeper
+      - postgres
+    volumes:
+      - ./ticker_list.csv:/app/ticker_list.csv
+
+  ingestion:
+    build:
+      context: .
+    container_name: stock-ingestion
+    command: python -u Data_Ingestion_Service.py
+    depends_on:
+      - postgres
+    volumes:
+      - ./ticker_list.csv:/app/ticker_list.csv
+
+
+  analysis:
+    build:
+      context: .
+    container_name: stock-analysis
+    command: python -u Data_Analysis_Service.py
+    depends_on:
+      - postgres
+    volumes:
+      - ./ticker_list.csv:/app/ticker_list.csv
+
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+
+volumes:
+  postgres_data:

@@ -1,0 +1,9 @@
+confluent_kafka
+yfinance
+pandas
+pytz
+psycopg2-binary
+SQLAlchemy
+Flask
+prophet
+pyspark

@@ -1,4 +1,3 @@
-import os
 import psycopg2
 from flask import Flask, render_template, jsonify, request, Response
 import json
@@ -12,11 +11,11 @@ app = Flask(__name__)
 ANALYSIS_DIR = "analysis_reports"
 
 # PostgreSQL Config
-PG_HOST = "localhost"
+PG_HOST = "stockdata-eu.postgres.database.azure.com"
 PG_PORT = "5432"
 PG_DATABASE = "stock_data"
-PG_USER = "postgres"
-PG_PASSWORD = "Cheddar92$"
+PG_USER = "bingbong"
+PG_PASSWORD = "AzureTest123!"
 
 def get_stock_symbols():
     try:
@@ -220,7 +219,6 @@ def last_price():
         print(f"❌ Error fetching last price: {e}")
         return jsonify({"error": "Server error"}), 500
 
-
 @app.route('/forecast-data')
 def forecast_data():
     symbol = request.args.get("symbol")
@@ -262,4 +260,4 @@ def forecast_data():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, threaded=True)
+    app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)

@@ -5,7 +5,6 @@ import time
 import json
 import threading
 import datetime
-import os
 from confluent_kafka import Producer
 import yfinance as yf
 from pyspark.sql import SparkSession
@@ -14,14 +13,14 @@ from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 import pytz
 
 # PostgreSQL Config
-PG_HOST = "localhost"
+PG_HOST = "stockdata-eu.postgres.database.azure.com"
 PG_PORT = "5432"
 PG_DATABASE = "stock_data"
-PG_USER = "postgres"
-PG_PASSWORD = "Cheddar92$"
+PG_USER = "bingbong"
+PG_PASSWORD = "AzureTest123!"
 
 # Kafka Config
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = "kafka:9092"
 TOPIC_NAME = "stock-data"
 
 producer_config = {
@@ -45,7 +44,6 @@ def get_tickers_from_csv_file(csv_path='ticker_list.csv'):
     return df['Ticker'].dropna().tolist()
 
 def clear_stock_realtime_if_2pm():
-        print("🧹 Clearing stock_realtime table at 2:00 PM Skopje time...")
         try:
             conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, dbname=PG_DATABASE, user=PG_USER, password=PG_PASSWORD)
             cursor = conn.cursor()
@@ -188,11 +186,22 @@ def process_spark_batch(batch_df, batch_id):
         return
 
     print(f"📊 [BATCH {batch_id}] Processing {batch_df.count()} records")
-    conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, dbname=PG_DATABASE, user=PG_USER, password=PG_PASSWORD)
+
+    conn = psycopg2.connect(
+        host=PG_HOST,
+        port=PG_PORT,
+        dbname=PG_DATABASE,
+        user=PG_USER,
+        password=PG_PASSWORD
+    )
     cursor = conn.cursor()
 
     insert_query = f"""
-        INSERT INTO stock_realtime (window_start, window_end, ticker, min_open, max_high, min_low, avg_close, close_price, total_volume)
+        INSERT INTO stock_realtime (
+            window_start, window_end, ticker,
+            min_open, max_high, min_low,
+            avg_close, close_price, total_volume
+        )
         VALUES %s
         ON CONFLICT (window_start, ticker) DO UPDATE
         SET max_high = EXCLUDED.max_high,
@@ -202,16 +211,25 @@ def process_spark_batch(batch_df, batch_id):
             total_volume = EXCLUDED.total_volume;
     """
 
-    batch_data = [(row["window"]["start"], row["window"]["end"], row["Ticker"],
-                   row["min_open"], row["max_high"], row["min_low"], row["avg_close"], row["close_price"], row["total_volume"])
-                  for row in batch_df.collect()]
+    try:
+        batch_data = [(row["window"]["start"], row["window"]["end"], row["Ticker"],
+                       row["min_open"], row["max_high"], row["min_low"],
+                       row["avg_close"], row["close_price"], row["total_volume"])
+                      for row in batch_df.collect()]
 
-    psycopg2.extras.execute_values(cursor, insert_query, batch_data)
-    conn.commit()
-    cursor.close()
-    conn.close()
+        psycopg2.extras.execute_values(cursor, insert_query, batch_data)
+        conn.commit()
 
-    print(f"✅ [BATCH {batch_id}] Inserted {len(batch_data)} records")
+        print(f"✅ [BATCH {batch_id}] Inserted {len(batch_data)} records")
+
+    except Exception as e:
+        print(f"❌ [BATCH {batch_id}] Failed to insert records: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        cursor.close()
+        conn.close()
 
 def process_kafka_stream(spark, end_time_limit=None):
     df = (spark.readStream
@@ -256,6 +274,9 @@ def start_consumer(end_time_limit=None):
 if __name__ == "__main__":
     skopje_tz = pytz.timezone('Europe/Skopje')
     cleared_today = False
+    services_running = False
+    producer_thread = None
+    consumer_thread = None
 
     while True:
         now = datetime.datetime.now(skopje_tz)
@@ -263,20 +284,31 @@ if __name__ == "__main__":
         start_time = datetime.time(hour=14, minute=30)
         end_time = datetime.time(hour=21, minute=0)
 
-        if current_time.hour == 0 and 0 <=current_time.minute < 5:
+        # Reset cleared_today flag at midnight
+        if current_time.hour == 0 and 0 <= current_time.minute < 10 and cleared_today:
             cleared_today = False
             print("🔁 Reset cleared_today flag at midnight.")
 
-        if current_time.hour == 14 and 0 <= current_time.minute < 20 and not cleared_today:
+        # Clear stock_realtime around 23:55 (once per day)
+        if current_time.hour == 23 and 55 <= current_time.minute < 59 and not cleared_today:
             clear_stock_realtime_if_2pm()
             cleared_today = True
 
-        if start_time <= current_time <= end_time:
-            print(f"🔄 Starting batch producer and consumer at Skopje time {current_time}...")
-            producer_thread = threading.Thread(target=start_batch_producer, kwargs={"batch_size": 500, "end_time_limit": end_time}, daemon=True)
+        # Start services at 14:30 if not already running
+        if start_time <= current_time < end_time and not services_running:
+            print(f"🟢 Starting batch producer and consumer at {current_time}...")
+            producer_thread = threading.Thread(target=start_batch_producer, kwargs={"batch_size": 250, "end_time_limit": end_time}, daemon=True)
             producer_thread.start()
-            start_consumer(end_time_limit=end_time)
-            break
 
-        print(f"⏳ Waiting for 2:30 PM Skopje time to start (current time: {current_time})...")
+            consumer_thread = threading.Thread(target=start_consumer, kwargs={"end_time_limit": end_time}, daemon=True)
+            consumer_thread.start()
+
+            services_running = True
+
+        # Stop services after 21:00
+        if current_time >= end_time and services_running:
+            print(f"🔴 Reached end time {end_time}. Services should stop now.")
+            services_running = False
+
+        print(f"⏳ Monitoring... Current time: {current_time}")
         time.sleep(60)

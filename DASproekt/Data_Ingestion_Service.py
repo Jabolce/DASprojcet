@@ -1,21 +1,19 @@
-import os
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import psycopg2
 import psycopg2.extras
-import time
+import time as time_module
+import pytz
+
 
 # PostgreSQL Config
-PG_HOST = "localhost"
+PG_HOST = "stockdata-eu.postgres.database.azure.com"
 PG_PORT = "5432"
 PG_DATABASE = "stock_data"
-PG_USER = "postgres"
-PG_PASSWORD = "Cheddar92$"
+PG_USER = "bingbong"
+PG_PASSWORD = "AzureTest123!"
 
-# Ensure stock_data folder exists
-if not os.path.exists('stock_data'):
-    os.makedirs('stock_data')
 
 def get_tickers_from_csv_file(csv_path='ticker_list.csv'):
     df = pd.read_csv(csv_path)
@@ -73,7 +71,7 @@ def fetch_data_for_tickers(tickers, batch_size=20):
             print(f"❌ Batch error for {batch}: {e}")
             continue
 
-        time.sleep(5)  # to avoid rate limits
+        time_module.sleep(10)  # to avoid rate limits
 
     return all_postgres_data
 
@@ -110,11 +108,25 @@ def insert_into_postgres(data):
         print(f"❌ PostgreSQL error: {e}")
 
 if __name__ == "__main__":
-    print("🔍 Reading tickers from stock_data folder...")
-    tickers = get_tickers_from_stock_data()
-    if not tickers:
-        print("⚠️ No tickers found in stock_data folder.")
-    else:
-        print(f"✅ Found {len(tickers)} tickers. Fetching data...")
-        data = fetch_data_for_tickers(tickers)
-        insert_into_postgres(data)
+    skopje_tz = pytz.timezone('Europe/Skopje')
+    last_run_date = None
+
+    while True:
+        now = datetime.now(skopje_tz)
+        current_time = now.time()
+        run_start = time(hour=0, minute=20)
+        run_end = time(hour=0, minute=25)
+
+        if run_start <= current_time < run_end and now.date() != last_run_date:
+            last_run_date = now.date()
+            print(f"🟢 Running Data Ingestion Service at {current_time}...")
+            tickers = get_tickers_from_stock_data()
+            if not tickers:
+                print("⚠️ No tickers found in stock_data folder.")
+            else:
+                print(f"✅ Found {len(tickers)} tickers. Fetching data...")
+                data = fetch_data_for_tickers(tickers)
+                insert_into_postgres(data)
+
+        print(f"⏳ Monitoring... Current time: {current_time}")
+        time_module.sleep(60)

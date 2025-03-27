@@ -3,13 +3,16 @@ from prophet import Prophet
 import os
 from sqlalchemy import create_engine, text
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime, time
+import pytz
+import time as time_module
 
 # PostgreSQL Config
-PG_HOST = "localhost"
+PG_HOST = "stockdata-eu.postgres.database.azure.com"
 PG_PORT = "5432"
 PG_DATABASE = "stock_data"
-PG_USER = "postgres"
-PG_PASSWORD = "Cheddar92$"
+PG_USER = "bingbong"
+PG_PASSWORD = "AzureTest123!"
 
 # Output directory
 REPORT_DIR = "analysis_reports"
@@ -80,8 +83,23 @@ def run_analysis(symbol):
     save_forecast(symbol, forecast_df)
 
 if __name__ == "__main__":
-    ticker_list = get_dynamic_tickers_from_csv()
-    print(f"🔍 Found {len(ticker_list)} tickers for analysis: {ticker_list}")
+    skopje_tz = pytz.timezone('Europe/Skopje')
+    last_run_date = None
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        executor.map(run_analysis, ticker_list)
+    while True:
+        now = datetime.now(skopje_tz)
+        current_time = now.time()
+        run_start = time(hour=4, minute=0)
+        run_end = time(hour=4, minute=10)
+
+        if run_start <= current_time < run_end and now.date() != last_run_date:
+            last_run_date = now.date()
+            ticker_list = get_dynamic_tickers_from_csv()
+            print(f"🔍 Found {len(ticker_list)} tickers for analysis: {ticker_list}")
+
+            with ProcessPoolExecutor(max_workers=8) as executor:
+                executor.map(run_analysis, ticker_list)
+
+
+        print(f"⏳ Monitoring... Current time: {current_time}")
+        time_module.sleep(60)
