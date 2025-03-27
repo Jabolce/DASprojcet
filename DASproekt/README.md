@@ -96,7 +96,7 @@ kafka, zookeeper: за real-time податоци
 dashboard: Flask сервер на порт 8050
 ingestion: сервис за прибирање
 analysis: сервис за прогноза
-realtime: сервис за Kafka обработка (фајл недостасува)
+realtime: сервис за Kafka обработка
 ```
 
 Како да стартуваш
