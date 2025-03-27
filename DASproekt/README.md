@@ -51,8 +51,20 @@ ticker_list.csv преку yfinance и ги зачувува во stock_history 
 4. Kafka + Real-Time Сервис (претпоставено)
 ```
 Kafka и Zookeeper се користат за обработка на живи податоци.
-Фајл: Real-Time_Processing_Service.py (не е доставен)
-Функција: Прима податоци во реално време, ги пишува во stock_realtime.
+Фајл: Real-Time_Processing_Service.py
+
+Функција:
+Producer: Ги прибира податоците во живо преку yfinance и ги испраќа во Kafka тема (stock-data)
+Consumer (Spark): Чита податоци од Kafka, ги агрегира на 10 секунди и ги запишува во табелата stock_realtime во PostgreSQL
+Автоматски ја чисти табелата stock_realtime секој ден во 23:55
+
+Технологии: confluent-kafka, Apache Spark Structured Streaming, PostgreSQL
+Работно време: секој ден од 14:30 до 21:00 (локално време – Европа/Скопје)
+
+Функционалности:
+Rate-limit менаџмент (retry ако има грешки)
+Паралелна обработка на податоци со threading
+Автоматско стартување и стопирање на сервисот во соодветни времиња
 ```
 
 Бази на Податоци
