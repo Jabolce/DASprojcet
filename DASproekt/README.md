@@ -9,7 +9,7 @@
 ├── Data_Ingestion_Service.py          # Прибирање на историски податоци преку yFinance
 ├── Data_Analysis_Service.py           # Генерирање прогнози со Prophet
 ├── Dashboard.py                       # Flask сервер за API и dashboard
-├── Real-Time_Processing_Service.py    # (недостапен) – обично користи Kafka
+├── Real-Time_Processing_Service.py    # Зима Real-Time податоци од берзата
 ├── graph.html                         # Фронтенд HTML за dashboard
 ├── ticker_list.csv                    # CSV со листа на тикери
 ├── docker-compose.yml                 # Docker Compose конфигурација
