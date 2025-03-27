@@ -19,7 +19,7 @@
 ```
 
 Опис на Сервисите
-
+```
 1. Сервис за Прибирање Податоци (Ingestion)
 Фајл: Data_Ingestion_Service.py
 
@@ -27,15 +27,18 @@
 ticker_list.csv преку yfinance и ги зачувува во stock_history табелата во PostgreSQL.
 
 Закажано Време: Секој ден во 00:20–00:25 по европско време (Скопје).
-
+```
 
 2. Сервис за Анализа на Податоци
+```
 Фајл: Data_Analysis_Service.py
 Функција: Користи Prophet за да направи 7-дневна прогноза за цените на акциите.
 База: Чита од stock_history, пишува во stock_analysis.
 Извршување: Автоматски секој ден во 04:00 – 04:10.
+```
 
 3. Dashboard Сервис
+```
 Фајл: Dashboard.py
 Функција: Flask сервер кој обезбедува API за:
 Историски податоци (/historical-data)
@@ -43,21 +46,26 @@ ticker_list.csv преку yfinance и ги зачувува во stock_history 
 Живи податоци преку Server-Sent Events (/live-data)
 Прогноза (/forecast-data)
 Интерфејс: graph.html – модерен и интерактивен frontend со Plotly график.
+```
 
 4. Kafka + Real-Time Сервис (претпоставено)
+```
 Kafka и Zookeeper се користат за обработка на живи податоци.
 Фајл: Real-Time_Processing_Service.py (не е доставен)
 Функција: Прима податоци во реално време, ги пишува во stock_realtime.
-
+```
 
 Бази на Податоци
+```
 PostgreSQL Табели:
 stock_history: историски податоци (date, open, close, volume…)
 stock_realtime: реално-временски податоци (timestamp, close_price)
 stock_analysis: прогнозирани вредности (yhat, yhat_upper/lower)
 сите табели се хостирани на Azure
+```
 
 Веб Интерфејс
+```
 Фајл: graph.html
 Селектор за тикер и временски период
 Приказ на:
@@ -66,8 +74,10 @@ stock_analysis: прогнозирани вредности (yhat, yhat_upper/lo
 Прогноза (зелена линија)
 Последна цена (црвена точка)
 Индикатор за статус на пазарот: LIVE, Loading, Market Closed
+```
 
 Docker Compose Конфигурација
+```
 Вклучува следниве сервиси:
 postgres: база на податоци (порт 5433 → 5432)
 kafka, zookeeper: за real-time податоци
@@ -75,9 +85,12 @@ dashboard: Flask сервер на порт 8050
 ingestion: сервис за прибирање
 analysis: сервис за прогноза
 realtime: сервис за Kafka обработка (фајл недостасува)
+```
 
 Како да стартуваш
+```
 docker-compose up --build (потребно е docker)
+```
 
 
 
